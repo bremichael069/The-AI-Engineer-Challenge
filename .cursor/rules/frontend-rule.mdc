@@ -1,6 +1,7 @@
 ---
 description: When designing a frontend or frontend components.
 globs: 
+  - "**/*.{ts,tsx}"
 alwaysApply: false
 ---
 ### Rules for Frontend
@@ -11,3 +12,79 @@ alwaysApply: false
 - You should use Next.js as it works best with Vercel. 
 - This frontend will ultimately be deployed on Vercel, but it should be possible to test locally. 
 - Always provide users with a way to run the created UI once you have created it.
+
+# Detailed Rules ... 
+
+# Frontend Rules ✨
+
+###  Visuals & UX (No ugly UIs)
+- Text must be readable. **No white-on-white. Ever.**
+- Good contrast, clean spacing, calm layouts.
+- Components grow with content — no cramped boxes.
+- Subtle motion only (smooth, not flashy).
+
+---
+
+### Safety First
+- Passwords, tokens, secrets → **masked inputs by default**.
+- Provide show/hide toggles.
+- Never log secrets. Never.
+
+---
+
+### Tech Stack
+- Use **Next.js** (best with Vercel).
+- Must run locally and deploy cleanly to Vercel.
+- Always tell users how to run it (`npm install && npm run dev`).
+
+---
+
+### Accessibility (Built-in, not optional)
+- Keyboard-friendly UI.
+- Visible focus states.
+- Labels for inputs (not placeholders only).
+- Errors should be obvious and helpful.
+
+---
+
+### Theming (Make it feel intentional)
+- Use **theme tokens**, not random hex colors.
+- Support **light + dark mode**.
+- Default vibe: clean, modern, calm.
+
+**Color mood:**
+- Light → soft whites, deep text, confident blue
+- Dark → deep slate, gentle contrast, brighter primary
+
+---
+
+### Components (Consistency wins)
+- One primary button per screen.
+- Clear hover / disabled / error states.
+- Cards use elevation + borders (not shadows alone).
+
+---
+
+### Responsive by Default
+- Mobile-first mindset.
+- Avoid fixed widths.
+- Long text should wrap, not break layouts.
+
+---
+
+### Don’ts
+- No hardcoded theme colors in components.
+- No fixed heights for content containers.
+- No secret inputs as plain text.
+- No “works on my screen only” UI.
+
+---
+
+### Final Check
+If it’s:
+- readable ✔
+- accessible ✔
+- themed ✔
+- easy to run ✔
+
+…it’s ready.

@@ -1,0 +1,14 @@
+api/
+docs/
+*.bat
+*.sh
+*.ipynb
+.env
+.venv/
+__pycache__/
+*.pyc
+pyproject.toml
+requirements.txt
+uv.lock
+start-dev.*
+
