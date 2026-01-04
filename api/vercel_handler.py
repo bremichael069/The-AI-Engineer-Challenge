@@ -1,10 +1,8 @@
 """
-Vercel serverless function handler for FastAPI backend
-This allows the FastAPI app to run as a Vercel serverless function
+Vercel serverless function handler
+Wraps FastAPI app for Vercel deployment
 """
-from api.index import app
 from mangum import Mangum
+from api.index import app
 
-# Wrap FastAPI app with Mangum for AWS Lambda/Vercel compatibility
 handler = Mangum(app, lifespan="off")
-
