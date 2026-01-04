@@ -6,8 +6,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
+from openai import APIError, APIConnectionError, RateLimitError
 import os
-import httpx
+import traceback
+import sys
 
 app = FastAPI()
 
@@ -24,19 +26,37 @@ class ChatRequest(BaseModel):
 
 def get_openai_client():
     api_key = os.getenv("OPENAI_API_KEY")
+    print(f"DEBUG: get_openai_client() called")
+    print(f"DEBUG: API key exists: {bool(api_key)}")
+    print(f"DEBUG: API key length (before strip): {len(api_key) if api_key else 0}")
+    
+    # CRITICAL FIX: Strip whitespace and newlines from API key
+    # This fixes the "Illegal header value" error caused by \r\n in the key
+    if api_key:
+        api_key = api_key.strip()
+        print(f"DEBUG: API key length (after strip): {len(api_key)}")
+        print(f"DEBUG: API key has newlines: {'\\n' in api_key or '\\r' in api_key}")
+        print(f"DEBUG: API key prefix: {api_key[:10] if len(api_key) > 10 else 'N/A'}...")
+    
     if not api_key:
+        print("DEBUG: ERROR - OPENAI_API_KEY not configured")
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
-    # Configure HTTP client with extended timeout for serverless environments
-    http_client = httpx.Client(
-        timeout=httpx.Timeout(60.0, connect=10.0),
-        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-    )
-    # Configure OpenAI client with custom HTTP client for better serverless compatibility
-    return OpenAI(
-        api_key=api_key,
-        http_client=http_client,
-        max_retries=3
-    )
+    
+    # Use default HTTP client (simpler, more reliable)
+    print("DEBUG: Creating OpenAI client with default configuration...")
+    print("DEBUG: Using timeout=30.0, max_retries=0")
+    try:
+        client = OpenAI(
+            api_key=api_key,
+            timeout=30.0,
+            max_retries=0  # No automatic retries - we want to see the actual error
+        )
+        print("DEBUG: ✅ OpenAI client created successfully")
+        return client
+    except Exception as e:
+        print(f"DEBUG: ❌ ERROR creating OpenAI client: {type(e).__name__}: {str(e)}")
+        print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+        raise
 
 @app.get("/api/")
 def root():
@@ -52,43 +72,129 @@ def health():
 
 @app.post("/api/chat")
 def chat(request: ChatRequest):
+    print("=" * 80)
+    print("DEBUG: ========== CHAT ENDPOINT CALLED ==========")
+    print(f"DEBUG: Request message: {request.message[:100]}...")
+    print(f"DEBUG: Python version: {sys.version}")
+    print(f"DEBUG: Current working directory: {os.getcwd()}")
+    
+    # Check environment
+    env_vars = [k for k in os.environ.keys() if 'OPENAI' in k.upper()]
+    print(f"DEBUG: Environment variables with 'OPENAI': {', '.join(env_vars) if env_vars else 'NONE'}")
+    
     try:
-        # Debug: Check if API key is present (don't log the actual key)
+        # Get API key and log details
         api_key = os.getenv("OPENAI_API_KEY")
-        print(f"DEBUG: API key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}, starts with 'sk-': {api_key.startswith('sk-') if api_key else False}")
+        print(f"DEBUG: API key retrieved from environment")
+        print(f"DEBUG: API key present: {bool(api_key)}")
+        print(f"DEBUG: API key length (raw): {len(api_key) if api_key else 0}")
         
+        # CRITICAL FIX: Strip whitespace and newlines from API key
+        if api_key:
+            api_key = api_key.strip()
+            print(f"DEBUG: API key length (stripped): {len(api_key)}")
+            print(f"DEBUG: API key contains newlines: {'\\n' in api_key or '\\r' in api_key}")
+            print(f"DEBUG: API key starts with 'sk-': {api_key.startswith('sk-')}")
+            print(f"DEBUG: API key starts with 'sk-proj-': {api_key.startswith('sk-proj-')}")
+        
+        # Create OpenAI client
+        print("DEBUG: Creating OpenAI client...")
         client = get_openai_client()
-        print(f"DEBUG: Attempting OpenAI API call with model: gpt-4o")
-        # Try gpt-3.5-turbo first (most reliable), fallback to gpt-4o if needed
+        print("DEBUG: OpenAI client created successfully")
+        
+        # Prepare the API call
+        model = "gpt-3.5-turbo"
+        messages = [
+            {"role": "system", "content": "You are a supportive mental coach."},
+            {"role": "user", "content": request.message}
+        ]
+        
+        print(f"DEBUG: Model: {model}")
+        print(f"DEBUG: Messages count: {len(messages)}")
+        print(f"DEBUG: Max tokens: 500")
+        print(f"DEBUG: Temperature: 0.7")
+        print("DEBUG: Making OpenAI API call NOW...")
+        print(f"DEBUG: API endpoint should be: https://api.openai.com/v1/chat/completions")
+        
+        # Make the API call
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Most reliable model for serverless
-            messages=[
-                {"role": "system", "content": "You are a supportive mental coach."},
-                {"role": "user", "content": request.message}
-            ],
+            model=model,
+            messages=messages,
             max_tokens=500,
             temperature=0.7
         )
-        print(f"DEBUG: OpenAI API call successful")
-        return {"reply": response.choices[0].message.content}
+        
+        print("DEBUG: ✅ OpenAI API call successful!")
+        print(f"DEBUG: Response received, choices count: {len(response.choices)}")
+        reply = response.choices[0].message.content
+        print(f"DEBUG: Reply length: {len(reply)}")
+        print(f"DEBUG: Reply preview: {reply[:100]}...")
+        print("=" * 80)
+        
+        return {"reply": reply}
+        
+    except APIConnectionError as e:
+        error_msg = str(e)
+        error_type = type(e).__name__
+        print("=" * 80)
+        print(f"DEBUG: ❌ APIConnectionError caught")
+        print(f"DEBUG: Error type: {error_type}")
+        print(f"DEBUG: Error message: {error_msg}")
+        print(f"DEBUG: Error args: {e.args}")
+        print(f"DEBUG: Error repr: {repr(e)}")
+        
+        # Try to get more details
+        detailed_info = f"APIConnectionError Details:\n"
+        detailed_info += f"- Type: {error_type}\n"
+        detailed_info += f"- Message: {error_msg}\n"
+        detailed_info += f"- Args: {e.args}\n"
+        
+        if hasattr(e, 'request'):
+            req = e.request
+            detailed_info += f"- Request method: {getattr(req, 'method', 'N/A')}\n"
+            detailed_info += f"- Request URL: {getattr(req, 'url', 'N/A')}\n"
+            detailed_info += f"- Request headers: {getattr(req, 'headers', 'N/A')}\n"
+        
+        if hasattr(e, 'response'):
+            resp = e.response
+            detailed_info += f"- Response status: {getattr(resp, 'status_code', 'N/A')}\n"
+            detailed_info += f"- Response text: {getattr(resp, 'text', 'N/A')}\n"
+        
+        print(f"DEBUG: Detailed info:\n{detailed_info}")
+        print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+        print("=" * 80)
+        
+        raise HTTPException(
+            status_code=500, 
+            detail=f"OpenAI API Connection Error: {error_msg}\n\nDebug Info:\n{detailed_info}\n\nCheck Vercel logs for full traceback."
+        )
+        
+    except APIError as e:
+        error_msg = str(e)
+        error_type = type(e).__name__
+        print("=" * 80)
+        print(f"DEBUG: ❌ APIError caught")
+        print(f"DEBUG: Error type: {error_type}")
+        print(f"DEBUG: Error message: {error_msg}")
+        print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+        print("=" * 80)
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"OpenAI API Error ({error_type}): {error_msg}\n\nCheck Vercel logs for full traceback."
+        )
+        
     except Exception as e:
         error_msg = str(e)
         error_type = type(e).__name__
+        print("=" * 80)
+        print(f"DEBUG: ❌ Unexpected error caught")
+        print(f"DEBUG: Error type: {error_type}")
+        print(f"DEBUG: Error message: {error_msg}")
+        print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+        print("=" * 80)
         
-        # Log the full error for debugging (this will appear in Vercel logs)
-        print(f"OpenAI API Error - Type: {error_type}, Message: {error_msg}")
-        
-        # Provide more helpful error messages based on error type
-        if "Connection" in error_msg or "timeout" in error_msg.lower() or "ConnectTimeout" in error_type:
-            error_msg = f"Connection error. The OpenAI API is temporarily unavailable. Please try again. (Details: {error_type}: {error_msg})"
-        elif "Invalid" in error_msg or "model" in error_msg.lower() or "NotFoundError" in error_type or "does not exist" in error_msg.lower():
-            error_msg = f"Model error: The model 'gpt-5.2' may not be available. Please use a valid model like 'gpt-4o', 'gpt-4-turbo', or 'gpt-3.5-turbo'. (Details: {error_type}: {error_msg})"
-        elif "rate limit" in error_msg.lower() or "RateLimitError" in error_type:
-            error_msg = "Rate limit exceeded. Please try again in a moment."
-        elif "Authentication" in error_msg or "InvalidAPIKey" in error_type:
-            error_msg = "API key error. Please check your OpenAI API key configuration."
-        else:
-            # Return the actual error for debugging
-            error_msg = f"{error_type}: {error_msg}"
-        
-        raise HTTPException(status_code=500, detail=f"Error calling OpenAI API: {error_msg}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected Error ({error_type}): {error_msg}\n\nFull traceback available in Vercel logs."
+        )
